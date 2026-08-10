@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
-source "${ROOT_DIR}/.env"
+source "${ROOT_DIR}/scripts/lib/load-env.sh"
 
 CONNECT_URL="http://127.0.0.1:${CONNECT_HOST_PORT}"
 CONNECTOR_JSON="${ROOT_DIR}/configs/connectors/opensearch-sink.json"

@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
-source "${ROOT_DIR}/.env"
+source "${ROOT_DIR}/scripts/lib/load-env.sh"
 
 CONNECT_URL="http://127.0.0.1:${CONNECT_HOST_PORT}"
 OS_URL="http://127.0.0.1:${OPENSEARCH_HOST_PORT}"

@@ -6,7 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
 # shellcheck disable=SC1091
-source "${ROOT_DIR}/.env"
+source "${ROOT_DIR}/scripts/lib/load-env.sh"
 
 COMPOSE=(podman-compose)
 if ! command -v podman-compose >/dev/null 2>&1; then
