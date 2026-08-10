@@ -1,0 +1,247 @@
+# =============================================================================
+# Production-oriented streaming stack — RHEL 8.10 / Podman / podman-compose
+# Network: streamstack-net (user-defined bridge)
+# Host ports (custom, non-default):
+#   ZooKeeper            12181
+#   Kafka                19092
+#   Kafka Connect        18083
+#   OpenSearch HTTP      19200
+#   OpenSearch transport 19600
+#   Kafka UI             18081
+#   OpenSearch Dashboards 15601
+# =============================================================================
+
+version: "3.8"
+
+networks:
+  streamstack-net:
+    driver: bridge
+    name: streamstack-net
+
+volumes:
+  zookeeper-data:
+    name: streamstack-zookeeper-data
+  zookeeper-log:
+    name: streamstack-zookeeper-log
+  kafka-data:
+    name: streamstack-kafka-data
+  opensearch-data:
+    name: streamstack-opensearch-data
+  connect-data:
+    name: streamstack-connect-data
+
+services:
+  zookeeper:
+    image: ${ZOOKEEPER_IMAGE}
+    container_name: streamstack-zookeeper
+    hostname: zookeeper
+    restart: unless-stopped
+    networks:
+      - streamstack-net
+    ports:
+      - "${ZOOKEEPER_HOST_PORT}:${ZOOKEEPER_PORT}"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: ${ZOOKEEPER_PORT}
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_INIT_LIMIT: 5
+      ZOOKEEPER_SYNC_LIMIT: 2
+      ZOOKEEPER_MAX_CLIENT_CNXNS: 60
+      ZOOKEEPER_AUTOPURGE_PURGE_INTERVAL: 12
+      ZOOKEEPER_AUTOPURGE_SNAP_RETAIN_COUNT: 3
+      ZOOKEEPER_ADMIN_ENABLE_SERVER: "false"
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data:Z
+      - zookeeper-log:/var/lib/zookeeper/log:Z
+    healthcheck:
+      test: ["CMD", "cub", "zk-ready", "localhost:${ZOOKEEPER_PORT}", "5"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  kafka:
+    image: ${KAFKA_IMAGE}
+    container_name: streamstack-kafka
+    hostname: kafka
+    restart: unless-stopped
+    depends_on:
+      - zookeeper
+    networks:
+      - streamstack-net
+    ports:
+      - "${KAFKA_HOST_PORT}:${KAFKA_EXTERNAL_PORT}"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:${ZOOKEEPER_PORT}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:${KAFKA_INTERNAL_PORT},PLAINTEXT_HOST://${KAFKA_ADVERTISED_HOST}:${KAFKA_HOST_PORT}
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:${KAFKA_INTERNAL_PORT},PLAINTEXT_HOST://0.0.0.0:${KAFKA_EXTERNAL_PORT}
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_DELETE_TOPIC_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_HEAP_OPTS: "-Xms512m -Xmx1g"
+    volumes:
+      - kafka-data:/var/lib/kafka/data:Z
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "kafka-broker-api-versions",
+          "--bootstrap-server",
+          "localhost:${KAFKA_EXTERNAL_PORT}",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+
+  kafka-connect:
+    image: ${CONNECT_IMAGE}
+    container_name: streamstack-kafka-connect
+    hostname: kafka-connect
+    restart: unless-stopped
+    depends_on:
+      - kafka
+      - opensearch
+    networks:
+      - streamstack-net
+    ports:
+      - "${CONNECT_HOST_PORT}:${CONNECT_PORT}"
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: kafka:${KAFKA_INTERNAL_PORT}
+      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+      CONNECT_REST_PORT: ${CONNECT_PORT}
+      CONNECT_GROUP_ID: ${CONNECT_GROUP_ID}
+      CONNECT_CONFIG_STORAGE_TOPIC: ${CONNECT_CONFIG_STORAGE_TOPIC}
+      CONNECT_OFFSET_STORAGE_TOPIC: ${CONNECT_OFFSET_STORAGE_TOPIC}
+      CONNECT_STATUS_STORAGE_TOPIC: ${CONNECT_STATUS_STORAGE_TOPIC}
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: ${CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR}
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: ${CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR}
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: ${CONNECT_STATUS_STORAGE_REPLICATION_FACTOR}
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_INTERNAL_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_INTERNAL_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_PLUGIN_PATH: /usr/share/confluent-hub-components,/usr/share/java
+      CONNECT_LOG4J_ROOT_LOGLEVEL: INFO
+      CONNECT_LOG4J_LOGGERS: org.apache.zookeeper=ERROR,org.I0Itec.zkclient=ERROR,org.reflections=ERROR
+    volumes:
+      - connect-data:/var/lib/kafka-connect:Z
+      - ./configs/connectors:/etc/kafka-connect/connectors:ro,Z
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-fsS",
+          "http://localhost:${CONNECT_PORT}/connectors",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 90s
+
+  opensearch:
+    image: ${OPENSEARCH_IMAGE}
+    container_name: streamstack-opensearch
+    hostname: opensearch
+    restart: unless-stopped
+    networks:
+      - streamstack-net
+    ports:
+      - "${OPENSEARCH_HOST_PORT}:${OPENSEARCH_HTTP_PORT}"
+      - "${OPENSEARCH_TRANSPORT_HOST_PORT}:${OPENSEARCH_TRANSPORT_PORT}"
+    environment:
+      discovery.type: single-node
+      node.name: opensearch-node1
+      cluster.name: streamstack-os
+      bootstrap.memory_lock: "true"
+      OPENSEARCH_JAVA_OPTS: ${OPENSEARCH_JAVA_OPTS}
+      DISABLE_SECURITY_PLUGIN: ${DISABLE_SECURITY_PLUGIN}
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data:Z
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://localhost:${OPENSEARCH_HTTP_PORT}/_cluster/health?wait_for_status=yellow&timeout=5s >/dev/null || exit 1",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+
+  kafka-ui:
+    image: ${KAFKA_UI_IMAGE}
+    container_name: streamstack-kafka-ui
+    hostname: kafka-ui
+    restart: unless-stopped
+    depends_on:
+      - kafka
+      - kafka-connect
+    networks:
+      - streamstack-net
+    ports:
+      - "${KAFKA_UI_HOST_PORT}:${KAFKA_UI_PORT}"
+    environment:
+      DYNAMIC_CONFIG_ENABLED: "true"
+      KAFKA_CLUSTERS_0_NAME: ${KAFKA_CLUSTER_NAME}
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:${KAFKA_INTERNAL_PORT}
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:${ZOOKEEPER_PORT}
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: streamstack-connect
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://kafka-connect:${CONNECT_PORT}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://localhost:${KAFKA_UI_PORT}/actuator/health >/dev/null 2>&1 || exit 1",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 45s
+
+  opensearch-dashboards:
+    image: ${DASHBOARDS_IMAGE}
+    container_name: streamstack-opensearch-dashboards
+    hostname: opensearch-dashboards
+    restart: unless-stopped
+    depends_on:
+      - opensearch
+    networks:
+      - streamstack-net
+    ports:
+      - "${DASHBOARDS_HOST_PORT}:${DASHBOARDS_PORT}"
+    environment:
+      OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: ${DISABLE_SECURITY_PLUGIN}
+      SERVER_HOST: "0.0.0.0"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://localhost:${DASHBOARDS_PORT}/api/status >/dev/null || exit 1",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 15
+      start_period: 90s

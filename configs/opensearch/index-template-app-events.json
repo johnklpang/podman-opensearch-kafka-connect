@@ -1,0 +1,19 @@
+{
+  "index_patterns": ["app-events*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "refresh_interval": "5s"
+    },
+    "mappings": {
+      "properties": {
+        "id": { "type": "keyword" },
+        "event_type": { "type": "keyword" },
+        "user_id": { "type": "keyword" },
+        "amount": { "type": "float" },
+        "ts": { "type": "date" }
+      }
+    }
+  }
+}
