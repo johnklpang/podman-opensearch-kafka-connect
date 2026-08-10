@@ -29,6 +29,21 @@ if ! curl -fsS "${CONNECT_URL}/" >/dev/null; then
 fi
 
 echo "==> Waiting for OpenSearch Sink plugin discovery (${EXPECTED_CLASS})"
+# Fail fast if jars are missing in the running container
+if podman inspect streamstack-kafka-connect >/dev/null 2>&1; then
+  JAR_NOW="$(podman exec streamstack-kafka-connect bash -lc \
+    'shopt -s nullglob; a=(/usr/share/confluent-hub-components/aiven-opensearch-connector/*.jar); echo ${#a[@]}' 2>/dev/null || echo 0)"
+  IMG="$(podman inspect streamstack-kafka-connect --format '{{.Config.Image}}' 2>/dev/null || true)"
+  echo "    running image: ${IMG}"
+  echo "    plugin jars in container: ${JAR_NOW}"
+  if [[ "${JAR_NOW}" -lt 1 ]]; then
+    echo "ERROR: OpenSearch plugin jars are not in the running Connect container." >&2
+    echo "Do NOT keep retrying this script. Bake and recreate first:" >&2
+    echo "  ./scripts/install-opensearch-plugin-now.sh" >&2
+    exit 1
+  fi
+fi
+
 for i in $(seq 1 40); do
   PLUGINS_JSON="$(curl -fsS "${CONNECT_URL}/connector-plugins" || true)"
   if [[ -z "${PLUGINS_JSON}" ]]; then
@@ -59,10 +74,8 @@ for i in $(seq 1 40); do
     echo "Plugins currently known:" >&2
     echo "${PLUGINS_JSON}" | jq . >&2 || echo "${PLUGINS_JSON}" >&2
     echo >&2
-    echo "Debug on host:" >&2
-    echo "  podman exec streamstack-kafka-connect bash -lc 'ls -la /usr/share/confluent-hub-components/aiven-opensearch-connector | head'" >&2
-    echo "  podman logs streamstack-kafka-connect --tail 200" >&2
-    echo "Rebuild image if plugin dir is empty: ./scripts/03-build-connect.sh && podman-compose --env-file .env -f podman-compose.yml up -d kafka-connect" >&2
+    echo "Jars were present but class not loaded — run:" >&2
+    echo "  ./scripts/install-opensearch-plugin-now.sh" >&2
     exit 1
   fi
   sleep 3
