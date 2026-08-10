@@ -291,6 +291,16 @@ sudo ./scripts/04-firewall-selinux.sh
 ./scripts/07-verify.sh
 ```
 
+### If Connect is missing / port 18083 refused
+
+`podman ps` must show `streamstack-kafka-connect`. If it does not:
+
+```bash
+podman ps -a --filter name=streamstack-kafka-connect
+./scripts/start-connect.sh
+./scripts/06-register-connector.sh
+```
+
 ### If `/connector-plugins` has no OpenSearch class
 
 Stock Connect images do **not** include the OpenSearch Sink. Bake it into a local image:
