@@ -6,3 +6,8 @@ data/
 __pycache__/
 *.pyc
 .DS_Store
+
+# Downloaded Kafka Connect plugin jars (fetched by scripts/03-fetch-opensearch-plugin.sh)
+kafka-connect/plugins/**/*.jar
+kafka-connect/plugins/**/*.zip
+!kafka-connect/plugins/.gitkeep

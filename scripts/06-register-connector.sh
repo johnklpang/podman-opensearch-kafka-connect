@@ -9,21 +9,58 @@ source "${ROOT_DIR}/scripts/lib/load-env.sh"
 CONNECT_URL="http://127.0.0.1:${CONNECT_HOST_PORT}"
 CONNECTOR_JSON="${ROOT_DIR}/configs/connectors/opensearch-sink.json"
 CONNECTOR_NAME="$(jq -r '.name' "${CONNECTOR_JSON}")"
+EXPECTED_CLASS="io.aiven.kafka.connect.opensearch.OpenSearchSinkConnector"
 
-echo "==> Waiting for Connect REST + plugin discovery"
+if ! command -v jq >/dev/null 2>&1; then
+  echo "ERROR: jq is required. Install with: dnf -y install jq" >&2
+  exit 1
+fi
+
+echo "==> Connect REST: ${CONNECT_URL}"
+if ! curl -fsS "${CONNECT_URL}/" >/dev/null; then
+  echo "ERROR: Kafka Connect REST is not reachable at ${CONNECT_URL}" >&2
+  echo "Check: podman logs streamstack-kafka-connect --tail 100" >&2
+  exit 1
+fi
+
+echo "==> Waiting for OpenSearch Sink plugin discovery (${EXPECTED_CLASS})"
 for i in $(seq 1 40); do
-  if curl -fsS "${CONNECT_URL}/connector-plugins" | jq -e '
-      map(.class) | map(select(test("(?i)opensearch"))) | length > 0
+  PLUGINS_JSON="$(curl -fsS "${CONNECT_URL}/connector-plugins" || true)"
+  if [[ -z "${PLUGINS_JSON}" ]]; then
+    echo "  attempt ${i}/40: Connect REST not ready"
+    sleep 3
+    continue
+  fi
+
+  if echo "${PLUGINS_JSON}" | jq -e --arg c "${EXPECTED_CLASS}" '
+      map(.class) | index($c)
     ' >/dev/null 2>&1; then
     echo "OpenSearch Sink plugin is available."
     break
   fi
-  sleep 3
+
+  # Also accept any *opensearch* sink class (diagnostic fallback)
+  if echo "${PLUGINS_JSON}" | jq -e '
+      map(.class) | map(select(test("(?i)opensearch"))) | length > 0
+    ' >/dev/null 2>&1; then
+    echo "OpenSearch-related plugin found (non-exact class match):"
+    echo "${PLUGINS_JSON}" | jq 'map(select(.class|test("(?i)opensearch")))'
+    break
+  fi
+
+  echo "  attempt ${i}/40: plugin not listed yet"
   if [[ "${i}" -eq 40 ]]; then
-    echo "OpenSearch connector plugin not found. Plugins currently known:"
-    curl -fsS "${CONNECT_URL}/connector-plugins" | jq .
+    echo "ERROR: OpenSearch connector plugin not found after waiting." >&2
+    echo "Plugins currently known:" >&2
+    echo "${PLUGINS_JSON}" | jq . >&2 || echo "${PLUGINS_JSON}" >&2
+    echo >&2
+    echo "Debug on host:" >&2
+    echo "  podman exec streamstack-kafka-connect bash -lc 'ls -la /usr/share/confluent-hub-components/aiven-opensearch-connector | head'" >&2
+    echo "  podman logs streamstack-kafka-connect --tail 200" >&2
+    echo "Rebuild image if plugin dir is empty: ./scripts/03-build-connect.sh && podman-compose --env-file .env -f podman-compose.yml up -d kafka-connect" >&2
     exit 1
   fi
+  sleep 3
 done
 
 echo "==> Ensuring sample topic '${SAMPLE_TOPIC}' exists"

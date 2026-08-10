@@ -12,3 +12,8 @@ set -a
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/.env"
 set +a
+
+# Normalize Dashboards hosts if a plain URL was provided in .env
+if [[ -n "${OPENSEARCH_HOSTS:-}" && "${OPENSEARCH_HOSTS}" != \[* ]]; then
+  OPENSEARCH_HOSTS="[\"${OPENSEARCH_HOSTS}\"]"
+fi

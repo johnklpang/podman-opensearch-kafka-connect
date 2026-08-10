@@ -16,22 +16,36 @@ RUN microdnf install -y curl unzip findutils \
     && rm -rf /var/cache/yum /var/cache/dnf
 
 # Install Aiven OpenSearch Sink Connector from GitHub release artifacts.
-# Class: io.aiven.kafka.connect.opensearch.OpensearchSinkConnector
+# SPI class: io.aiven.kafka.connect.opensearch.OpenSearchSinkConnector
 RUN set -eux; \
-    mkdir -p "${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector"; \
+    PLUGIN_DIR="${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector"; \
+    mkdir -p "${PLUGIN_DIR}"; \
     TMP_ZIP="/tmp/opensearch-connector.zip"; \
+    TMP_DIR="/tmp/opensearch-connector-extract"; \
     curl -fsSL \
       "https://github.com/Aiven-Open/opensearch-connector-for-apache-kafka/releases/download/v${OPENSEARCH_CONNECTOR_VERSION}/opensearch-connector-for-apache-kafka-${OPENSEARCH_CONNECTOR_VERSION}.zip" \
       -o "${TMP_ZIP}"; \
-    unzip -q "${TMP_ZIP}" -d "${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector"; \
+    rm -rf "${TMP_DIR}"; \
+    mkdir -p "${TMP_DIR}"; \
+    unzip -q "${TMP_ZIP}" -d "${TMP_DIR}"; \
+    # Flatten jars into a single plugin directory (Connect classloader-friendly)
+    find "${TMP_DIR}" -type f -name '*.jar' -exec cp -a {} "${PLUGIN_DIR}/" \; ; \
     rm -f "${TMP_ZIP}"; \
-    # Normalize layout: Connect expects plugin jars under a single plugin directory
-    if [ -z "$(find "${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector" -name '*.jar' | head -n1)" ]; then \
-      echo "ERROR: no jars found after extracting OpenSearch connector" >&2; \
-      exit 1; \
-    fi; \
-    chown -R appuser:appuser "${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector"; \
-    find "${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector" -maxdepth 3 -type d -print
+    rm -rf "${TMP_DIR}"; \
+    JAR_COUNT="$(find "${PLUGIN_DIR}" -maxdepth 1 -type f -name '*.jar' | wc -l)"; \
+    echo "Installed ${JAR_COUNT} connector jars into ${PLUGIN_DIR}"; \
+    test "${JAR_COUNT}" -ge 1; \
+    # Sanity-check the connector SPI class is present in a jar
+    FOUND=0; \
+    for j in "${PLUGIN_DIR}"/*.jar; do \
+      if unzip -l "${j}" 2>/dev/null | grep -q 'io/aiven/kafka/connect/opensearch/OpenSearchSinkConnector.class'; then \
+        FOUND=1; \
+        echo "Found OpenSearchSinkConnector in ${j}"; \
+        break; \
+      fi; \
+    done; \
+    test "${FOUND}" -eq 1; \
+    chown -R appuser:appuser "${PLUGIN_DIR}"
 
 ENV CONNECT_PLUGIN_PATH="${CONNECT_PLUGIN_PATH}"
 
