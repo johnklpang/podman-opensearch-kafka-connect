@@ -310,13 +310,24 @@ git pull
 
 That builds `localhost/kafka-connect-opensearch:7.6.1` (plugin baked in) and starts Connect with the stock Confluent entrypoint.
 
-### If `/connector-plugins` has no OpenSearch class
+### `/connector-plugins` returns `[]` for OpenSearch
 
-Stock Connect images do **not** include the OpenSearch Sink. Bake it into a local image:
+Connect is running **without** the Sink plugin (stock image or empty bake).
 
 ```bash
-./scripts/recover-connect-baked.sh
+# Shows which image is running + jar count, then bakes via podman cp+commit and recreates
+./scripts/install-opensearch-plugin-now.sh
 ```
+
+Quick checks:
+
+```bash
+podman inspect streamstack-kafka-connect --format '{{.Config.Image}}'
+podman exec streamstack-kafka-connect ls /usr/share/confluent-hub-components/aiven-opensearch-connector | wc -l
+curl -s http://127.0.0.1:18083/connector-plugins | jq 'map(.class)|map(select(test("(?i)opensearch")))'
+```
+
+Expected image: `localhost/kafka-connect-opensearch:7.6.1` with ~60 jars and class `OpenSearchSinkConnector`.
 
 This will:
 1. Download Aiven connector jars
