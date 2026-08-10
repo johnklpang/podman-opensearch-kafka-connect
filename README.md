@@ -299,15 +299,20 @@ sudo ./scripts/04-firewall-selinux.sh
 
 ### If `/connector-plugins` has no OpenSearch class
 
-Your Connect container started without the plugin. Fix:
+Your Connect container started without the plugin. Use the one-shot recovery:
 
 ```bash
-./scripts/03-fetch-opensearch-plugin.sh
-# ensure .env uses stock Connect (recommended):
-# CONNECT_IMAGE=docker.io/confluentinc/cp-kafka-connect:7.6.1
-podman-compose --env-file .env -f podman-compose.yml up -d kafka-connect
-curl -s http://127.0.0.1:18083/connector-plugins | jq 'map(.class)|map(select(test("(?i)opensearch")))'
-./scripts/06-register-connector.sh
+./scripts/fix-connect-plugin-now.sh
+```
+
+This fetches jars, force-recreates Connect with an entrypoint that copies them into
+`/usr/share/confluent-hub-components/aiven-opensearch-connector`, waits until
+`OpenSearchSinkConnector` appears, then registers the connector.
+
+Diagnostics only:
+
+```bash
+./scripts/diagnose-connect-plugin.sh
 ```
 
 Teardown:
