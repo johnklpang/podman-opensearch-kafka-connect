@@ -19,7 +19,12 @@ fi
 echo "==> Connect REST: ${CONNECT_URL}"
 if ! curl -fsS "${CONNECT_URL}/" >/dev/null; then
   echo "ERROR: Kafka Connect REST is not reachable at ${CONNECT_URL}" >&2
-  echo "Check: podman logs streamstack-kafka-connect --tail 100" >&2
+  echo "Connect is probably not running. Check:" >&2
+  echo "  podman ps -a --filter name=streamstack-kafka-connect" >&2
+  echo "  podman logs streamstack-kafka-connect --tail 100" >&2
+  echo "Start/rebuild with:" >&2
+  echo "  ./scripts/start-connect.sh" >&2
+  echo "  # or: ./scripts/recover-connect-baked.sh" >&2
   exit 1
 fi
 
