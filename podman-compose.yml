@@ -104,6 +104,9 @@ services:
       start_period: 60s
 
   kafka-connect:
+    # Requires baked image with OpenSearch plugin jars:
+    #   ./scripts/03-build-connect.sh
+    #   CONNECT_IMAGE=localhost/kafka-connect-opensearch:7.6.1
     image: ${CONNECT_IMAGE}
     container_name: streamstack-kafka-connect
     hostname: kafka-connect
@@ -115,8 +118,6 @@ services:
       - streamstack-net
     ports:
       - "${CONNECT_HOST_PORT}:${CONNECT_PORT}"
-    # Copy staged jars into Confluent's default plugin path, then start Connect.
-    entrypoint: ["/bin/bash", "/entrypoint/docker-entrypoint.sh"]
     environment:
       CONNECT_BOOTSTRAP_SERVERS: kafka:${KAFKA_INTERNAL_PORT}
       CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
@@ -135,15 +136,11 @@ services:
       CONNECT_INTERNAL_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
       CONNECT_INTERNAL_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
       CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components
-      CONNECT_PLUGIN_STAGING: /plugin-staging
       CONNECT_LOG4J_ROOT_LOGLEVEL: INFO
       CONNECT_LOG4J_LOGGERS: org.apache.zookeeper=ERROR,org.I0Itec.zkclient=ERROR,org.reflections=ERROR
     volumes:
       - connect-data:/var/lib/kafka-connect:Z
       - ./configs/connectors:/etc/kafka-connect/connectors:ro,Z
-      # Host jars from ./scripts/03-fetch-opensearch-plugin.sh
-      - ./kafka-connect/plugins/aiven-opensearch-connector:/plugin-staging:ro,Z
-      - ./kafka-connect/docker-entrypoint.sh:/entrypoint/docker-entrypoint.sh:ro,Z
     healthcheck:
       test:
         [
