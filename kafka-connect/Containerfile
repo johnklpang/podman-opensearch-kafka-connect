@@ -1,0 +1,42 @@
+# Kafka Connect with OpenSearch Sink Connector (Aiven)
+# Build:
+#   podman build -t localhost/kafka-connect-opensearch:7.6.1 \
+#     -f kafka-connect/Containerfile kafka-connect
+
+ARG CONNECT_VERSION=7.6.1
+FROM docker.io/confluentinc/cp-kafka-connect:${CONNECT_VERSION}
+
+ARG OPENSEARCH_CONNECTOR_VERSION=4.1.0
+ARG CONNECT_PLUGIN_PATH=/usr/share/confluent-hub-components
+
+USER root
+
+RUN microdnf install -y curl unzip findutils \
+    && microdnf clean all \
+    && rm -rf /var/cache/yum /var/cache/dnf
+
+# Install Aiven OpenSearch Sink Connector from GitHub release artifacts.
+# Class: io.aiven.kafka.connect.opensearch.OpensearchSinkConnector
+RUN set -eux; \
+    mkdir -p "${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector"; \
+    TMP_ZIP="/tmp/opensearch-connector.zip"; \
+    curl -fsSL \
+      "https://github.com/Aiven-Open/opensearch-connector-for-apache-kafka/releases/download/v${OPENSEARCH_CONNECTOR_VERSION}/opensearch-connector-for-apache-kafka-${OPENSEARCH_CONNECTOR_VERSION}.zip" \
+      -o "${TMP_ZIP}"; \
+    unzip -q "${TMP_ZIP}" -d "${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector"; \
+    rm -f "${TMP_ZIP}"; \
+    # Normalize layout: Connect expects plugin jars under a single plugin directory
+    if [ -z "$(find "${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector" -name '*.jar' | head -n1)" ]; then \
+      echo "ERROR: no jars found after extracting OpenSearch connector" >&2; \
+      exit 1; \
+    fi; \
+    chown -R appuser:appuser "${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector"; \
+    find "${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector" -maxdepth 3 -type d -print
+
+ENV CONNECT_PLUGIN_PATH="${CONNECT_PLUGIN_PATH}"
+
+USER appuser
+
+LABEL org.opencontainers.image.title="kafka-connect-opensearch" \
+      org.opencontainers.image.description="Confluent Kafka Connect with Aiven OpenSearch Sink Connector" \
+      org.opencontainers.image.version="${CONNECT_VERSION}-${OPENSEARCH_CONNECTOR_VERSION}"

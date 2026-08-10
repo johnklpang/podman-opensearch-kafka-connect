@@ -1,0 +1,25 @@
+# Optional: rootless user systemd unit
+# Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp systemd/streamstack.service ~/.config/systemd/user/
+#   # Edit WorkingDirectory to your clone path
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now streamstack.service
+# Requires: loginctl enable-linger $USER
+
+[Unit]
+Description=Streamstack (ZooKeeper/Kafka/Connect/OpenSearch) via podman-compose
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=%h/podman-opensearch-kafka-connect
+Environment=PODMAN_USERNS=keep-id
+ExecStart=/usr/bin/podman-compose --env-file .env -f podman-compose.yml up -d
+ExecStop=/usr/bin/podman-compose --env-file .env -f podman-compose.yml down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=default.target

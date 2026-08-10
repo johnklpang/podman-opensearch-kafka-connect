@@ -1,0 +1,25 @@
+{
+  "name": "opensearch-sink-app-events",
+  "config": {
+    "connector.class": "io.aiven.kafka.connect.opensearch.OpensearchSinkConnector",
+    "tasks.max": "1",
+    "topics": "app-events",
+    "connection.url": "http://opensearch:9200",
+    "type.name": "_doc",
+    "key.ignore": "true",
+    "schema.ignore": "true",
+    "behavior.on.null.values": "ignore",
+    "behavior.on.malformed.documents": "warn",
+    "drop.invalid.message": "true",
+    "batch.size": "100",
+    "linger.ms": "1000",
+    "max.buffered.records": "10000",
+    "flush.timeout.ms": "10000",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    "errors.tolerance": "all",
+    "errors.log.enable": "true",
+    "errors.log.include.messages": "true"
+  }
+}
