@@ -232,7 +232,7 @@ services:
     ports:
       - "${DASHBOARDS_HOST_PORT}:${DASHBOARDS_PORT}"
     environment:
-      OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
+      OPENSEARCH_HOSTS: '["${OPENSEARCH_HOSTS}"]'
       DISABLE_SECURITY_DASHBOARDS_PLUGIN: ${DISABLE_SECURITY_PLUGIN}
       SERVER_HOST: "0.0.0.0"
     healthcheck:
