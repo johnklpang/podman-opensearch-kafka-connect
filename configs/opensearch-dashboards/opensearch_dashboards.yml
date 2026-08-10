@@ -1,0 +1,13 @@
+server.host: "0.0.0.0"
+server.port: 5601
+
+# Must be the Podman service name — NOT 127.0.0.1 / localhost
+opensearch.hosts: ["http://opensearch:9200"]
+
+# Security plugin disabled to match DISABLE_SECURITY_PLUGIN on OpenSearch
+opensearch.ssl.verificationMode: none
+opensearch.requestHeadersWhitelist: ["securitytenant","Authorization"]
+
+logging.dest: stdout
+logging.silent: false
+logging.quiet: false
