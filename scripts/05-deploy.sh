@@ -13,12 +13,11 @@ if ! command -v podman-compose >/dev/null 2>&1; then
   COMPOSE=(python3 -m podman_compose)
 fi
 
-PLUGIN_DIR="${ROOT_DIR}/kafka-connect/plugins/aiven-opensearch-connector"
-if [[ ! -d "${PLUGIN_DIR}" ]] || [[ -z "$(find "${PLUGIN_DIR}" -maxdepth 1 -name '*.jar' 2>/dev/null | head -n1)" ]]; then
-  echo "==> OpenSearch Connect plugin missing on host — fetching"
-  "${ROOT_DIR}/scripts/03-fetch-opensearch-plugin.sh"
+if ! podman image exists "${CONNECT_IMAGE}" 2>/dev/null; then
+  echo "==> Connect image ${CONNECT_IMAGE} missing — building baked image with OpenSearch plugin"
+  "${ROOT_DIR}/scripts/03-build-connect.sh"
 else
-  echo "==> Host plugin present: ${PLUGIN_DIR}"
+  echo "==> Connect image present: ${CONNECT_IMAGE}"
 fi
 
 echo "==> Creating user-defined network if missing"

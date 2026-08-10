@@ -120,27 +120,21 @@ Images pulled:
 
 ## 3. Kafka Connect + OpenSearch Sink plugin
 
-**Recommended (runtime mount):** download jars to the host and mount them into Connect.
-
-```bash
-./scripts/03-fetch-opensearch-plugin.sh
-```
-
-- Host path: `kafka-connect/plugins/aiven-opensearch-connector/*.jar`
-- Mounted at: `/opt/kafka-connect-plugins` (see `CONNECT_PLUGIN_PATH` in compose)
-- Plugin class: `io.aiven.kafka.connect.opensearch.OpenSearchSinkConnector`
-
-**Optional (baked image):** [`kafka-connect/Containerfile`](kafka-connect/Containerfile)
+**Required:** bake the Aiven OpenSearch Sink into a local image (bind mounts are unreliable under SELinux/rootful Podman).
 
 ```bash
 ./scripts/03-build-connect.sh
-# then set CONNECT_IMAGE=localhost/kafka-connect-opensearch:7.6.1 in .env
 ```
+
+- Image: `localhost/kafka-connect-opensearch:7.6.1` (set as `CONNECT_IMAGE` in `.env`)
+- Plugin class: `io.aiven.kafka.connect.opensearch.OpenSearchSinkConnector`
+- Containerfile: [`kafka-connect/Containerfile`](kafka-connect/Containerfile) (`COPY` of prefetched jars)
 
 Confirm at runtime:
 
 ```bash
 curl -s http://127.0.0.1:18083/connector-plugins | jq 'map(.class) | map(select(test("(?i)opensearch")))'
+podman exec streamstack-kafka-connect ls /usr/share/confluent-hub-components/aiven-opensearch-connector | head
 ```
 
 ---
@@ -290,7 +284,7 @@ sudo ./scripts/04-firewall-selinux.sh
 
 # As runtime user
 ./scripts/02-pull-images.sh
-./scripts/03-fetch-opensearch-plugin.sh   # required: host-mounted OpenSearch Sink jars
+./scripts/03-build-connect.sh             # bake OpenSearch Sink into local Connect image
 ./scripts/05-deploy.sh
 ./scripts/06-register-connector.sh
 ./scripts/produce-sample-data.sh 20
@@ -299,20 +293,28 @@ sudo ./scripts/04-firewall-selinux.sh
 
 ### If `/connector-plugins` has no OpenSearch class
 
-Your Connect container started without the plugin. Use the one-shot recovery:
+Stock Connect images do **not** include the OpenSearch Sink. Bake it into a local image:
 
 ```bash
-./scripts/fix-connect-plugin-now.sh
+./scripts/recover-connect-baked.sh
 ```
 
-This fetches jars, force-recreates Connect with an entrypoint that copies them into
-`/usr/share/confluent-hub-components/aiven-opensearch-connector`, waits until
-`OpenSearchSinkConnector` appears, then registers the connector.
+This will:
+1. Download Aiven connector jars
+2. `podman build` `localhost/kafka-connect-opensearch:7.6.1` with jars `COPY`’d in
+3. Recreate the Connect container from that image
+4. Register the sink connector
 
-Diagnostics only:
+Manual equivalent:
 
 ```bash
-./scripts/diagnose-connect-plugin.sh
+./scripts/03-build-connect.sh
+# ensure .env has:
+# CONNECT_IMAGE=localhost/kafka-connect-opensearch:7.6.1
+podman rm -f streamstack-kafka-connect
+podman-compose --env-file .env -f podman-compose.yml up -d kafka-connect
+curl -s http://127.0.0.1:18083/connector-plugins | jq 'map(.class)|map(select(test("(?i)opensearch")))'
+./scripts/06-register-connector.sh
 ```
 
 Teardown:

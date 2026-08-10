@@ -1,56 +1,42 @@
-# Kafka Connect with OpenSearch Sink Connector (Aiven)
-# Build:
+# Bake Aiven OpenSearch Sink jars into Confluent Kafka Connect.
+# Build context must already contain plugins/aiven-opensearch-connector/*.jar
+# (run ../scripts/03-fetch-opensearch-plugin.sh first).
+#
 #   podman build -t localhost/kafka-connect-opensearch:7.6.1 \
 #     -f kafka-connect/Containerfile kafka-connect
 
 ARG CONNECT_VERSION=7.6.1
 FROM docker.io/confluentinc/cp-kafka-connect:${CONNECT_VERSION}
 
-ARG OPENSEARCH_CONNECTOR_VERSION=4.1.0
 ARG CONNECT_PLUGIN_PATH=/usr/share/confluent-hub-components
+ENV CONNECT_PLUGIN_PATH="${CONNECT_PLUGIN_PATH}"
 
 USER root
 
-RUN microdnf install -y curl unzip findutils \
-    && microdnf clean all \
-    && rm -rf /var/cache/yum /var/cache/dnf
+RUN mkdir -p "${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector"
 
-# Install Aiven OpenSearch Sink Connector from GitHub release artifacts.
-# SPI class: io.aiven.kafka.connect.opensearch.OpenSearchSinkConnector
+# Prefetched/flattened jars from scripts/03-fetch-opensearch-plugin.sh
+COPY plugins/aiven-opensearch-connector/ ${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector/
+
 RUN set -eux; \
     PLUGIN_DIR="${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector"; \
-    mkdir -p "${PLUGIN_DIR}"; \
-    TMP_ZIP="/tmp/opensearch-connector.zip"; \
-    TMP_DIR="/tmp/opensearch-connector-extract"; \
-    curl -fsSL \
-      "https://github.com/Aiven-Open/opensearch-connector-for-apache-kafka/releases/download/v${OPENSEARCH_CONNECTOR_VERSION}/opensearch-connector-for-apache-kafka-${OPENSEARCH_CONNECTOR_VERSION}.zip" \
-      -o "${TMP_ZIP}"; \
-    rm -rf "${TMP_DIR}"; \
-    mkdir -p "${TMP_DIR}"; \
-    unzip -q "${TMP_ZIP}" -d "${TMP_DIR}"; \
-    # Flatten jars into a single plugin directory (Connect classloader-friendly)
-    find "${TMP_DIR}" -type f -name '*.jar' -exec cp -a {} "${PLUGIN_DIR}/" \; ; \
-    rm -f "${TMP_ZIP}"; \
-    rm -rf "${TMP_DIR}"; \
     JAR_COUNT="$(find "${PLUGIN_DIR}" -maxdepth 1 -type f -name '*.jar' | wc -l)"; \
-    echo "Installed ${JAR_COUNT} connector jars into ${PLUGIN_DIR}"; \
+    echo "Baked jar count: ${JAR_COUNT}"; \
     test "${JAR_COUNT}" -ge 1; \
-    # Sanity-check the connector SPI class is present in a jar
     FOUND=0; \
     for j in "${PLUGIN_DIR}"/*.jar; do \
       if unzip -l "${j}" 2>/dev/null | grep -q 'io/aiven/kafka/connect/opensearch/OpenSearchSinkConnector.class'; then \
-        FOUND=1; \
         echo "Found OpenSearchSinkConnector in ${j}"; \
+        FOUND=1; \
         break; \
       fi; \
     done; \
     test "${FOUND}" -eq 1; \
-    chown -R appuser:appuser "${PLUGIN_DIR}"
-
-ENV CONNECT_PLUGIN_PATH="${CONNECT_PLUGIN_PATH}"
+    chown -R appuser:appuser "${PLUGIN_DIR}"; \
+    # Ensure world-readable (avoids random uid issues under rootless/rootful Podman)
+    chmod -R a+rX "${PLUGIN_DIR}"
 
 USER appuser
 
 LABEL org.opencontainers.image.title="kafka-connect-opensearch" \
-      org.opencontainers.image.description="Confluent Kafka Connect with Aiven OpenSearch Sink Connector" \
-      org.opencontainers.image.version="${CONNECT_VERSION}-${OPENSEARCH_CONNECTOR_VERSION}"
+      org.opencontainers.image.description="Confluent Kafka Connect with baked Aiven OpenSearch Sink Connector"

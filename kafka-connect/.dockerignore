@@ -1,0 +1,3 @@
+# Keep plugin jars in the build context (do not ignore them).
+**/*.md
+**/.gitkeep
