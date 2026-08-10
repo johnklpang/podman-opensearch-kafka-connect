@@ -232,16 +232,18 @@ services:
     ports:
       - "${DASHBOARDS_HOST_PORT}:${DASHBOARDS_PORT}"
     environment:
-      OPENSEARCH_HOSTS: '["${OPENSEARCH_HOSTS}"]'
+      # Must be a JSON array. Value comes from .env (quoted there for bash `source`).
+      OPENSEARCH_HOSTS: ${OPENSEARCH_HOSTS}
       DISABLE_SECURITY_DASHBOARDS_PLUGIN: ${DISABLE_SECURITY_PLUGIN}
       SERVER_HOST: "0.0.0.0"
     healthcheck:
+      # Dashboards image may lack curl; use bash /dev/tcp probe on the HTTP port.
       test:
         [
           "CMD-SHELL",
-          "curl -fsS http://localhost:${DASHBOARDS_PORT}/api/status >/dev/null || exit 1",
+          "bash -c 'exec 3<>/dev/tcp/127.0.0.1/${DASHBOARDS_PORT}'",
         ]
       interval: 30s
       timeout: 10s
       retries: 15
-      start_period: 90s
+      start_period: 120s

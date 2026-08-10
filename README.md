@@ -124,7 +124,7 @@ File: [`kafka-connect/Containerfile`](kafka-connect/Containerfile)
 
 - Base: Confluent `cp-kafka-connect:7.6.1`
 - Installs **Aiven OpenSearch Sink Connector v4.1.0** from the official GitHub release ZIP
-- Plugin class: `io.aiven.kafka.connect.opensearch.OpensearchSinkConnector`
+- Plugin class: `io.aiven.kafka.connect.opensearch.OpenSearchSinkConnector`
 
 Build:
 
