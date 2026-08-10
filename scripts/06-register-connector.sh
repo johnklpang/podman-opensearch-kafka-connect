@@ -9,7 +9,7 @@ source "${ROOT_DIR}/scripts/lib/load-env.sh"
 CONNECT_URL="http://127.0.0.1:${CONNECT_HOST_PORT}"
 CONNECTOR_JSON="${ROOT_DIR}/configs/connectors/opensearch-sink.json"
 CONNECTOR_NAME="$(jq -r '.name' "${CONNECTOR_JSON}")"
-EXPECTED_CLASS="io.aiven.kafka.connect.opensearch.OpenSearchSinkConnector"
+EXPECTED_CLASS="io.aiven.kafka.connect.opensearch.OpensearchSinkConnector"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "ERROR: jq is required. Install with: dnf -y install jq" >&2

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compatibility: always use podman-cp bake + recreate path
+# Compatibility wrapper → Java 11–compatible fix
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exec "${ROOT_DIR}/scripts/install-opensearch-plugin-now.sh"
+exec "${ROOT_DIR}/scripts/FIX-IT-NOW.sh"
