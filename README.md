@@ -291,15 +291,24 @@ sudo ./scripts/04-firewall-selinux.sh
 ./scripts/07-verify.sh
 ```
 
-### If Connect is missing / port 18083 refused
+### Connect crash-loop: `find: command not found`
 
-`podman ps` must show `streamstack-kafka-connect`. If it does not:
+If logs show:
+
+```text
+[streamstack-connect-init] staging=/plugin-staging ...
+/entrypoint/docker-entrypoint.sh: line N: find: command not found
+```
+
+your host is still using the **old custom entrypoint**. Stop it and use the baked image:
 
 ```bash
-podman ps -a --filter name=streamstack-kafka-connect
-./scripts/start-connect.sh
-./scripts/06-register-connector.sh
+podman rm -f streamstack-kafka-connect
+git pull
+./scripts/emergency-fix-connect.sh
 ```
+
+That builds `localhost/kafka-connect-opensearch:7.6.1` (plugin baked in) and starts Connect with the stock Confluent entrypoint.
 
 ### If `/connector-plugins` has no OpenSearch class
 
