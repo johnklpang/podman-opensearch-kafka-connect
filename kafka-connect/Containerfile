@@ -13,7 +13,10 @@ ENV CONNECT_PLUGIN_PATH="${CONNECT_PLUGIN_PATH}"
 
 USER root
 
-RUN mkdir -p "${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector"
+RUN microdnf install -y findutils unzip \
+    && microdnf clean all \
+    && rm -rf /var/cache/yum /var/cache/dnf \
+    && mkdir -p "${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector"
 
 # Prefetched/flattened jars from scripts/03-fetch-opensearch-plugin.sh
 COPY plugins/aiven-opensearch-connector/ ${CONNECT_PLUGIN_PATH}/aiven-opensearch-connector/
@@ -25,7 +28,7 @@ RUN set -eux; \
     test "${JAR_COUNT}" -ge 1; \
     FOUND=0; \
     for j in "${PLUGIN_DIR}"/*.jar; do \
-      if unzip -l "${j}" 2>/dev/null | grep -q 'io/aiven/kafka/connect/opensearch/OpenSearchSinkConnector.class'; then \
+      if unzip -l "${j}" | grep -q 'io/aiven/kafka/connect/opensearch/OpenSearchSinkConnector.class'; then \
         echo "Found OpenSearchSinkConnector in ${j}"; \
         FOUND=1; \
         break; \
@@ -33,7 +36,6 @@ RUN set -eux; \
     done; \
     test "${FOUND}" -eq 1; \
     chown -R appuser:appuser "${PLUGIN_DIR}"; \
-    # Ensure world-readable (avoids random uid issues under rootless/rootful Podman)
     chmod -R a+rX "${PLUGIN_DIR}"
 
 USER appuser
