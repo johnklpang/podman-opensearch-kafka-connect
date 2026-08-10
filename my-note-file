@@ -1,1 +1,12 @@
-my-note-file
+./scripts/03-fetch-opensearch-plugin.sh
+==> Fetching Aiven OpenSearch connector v4.1.0
+==> Extracting and flattening jars into /opt/deploy/podman-opensearch-kafka-connect/kafka-connect/plugins/aiven-opensearch-connector
+Installed 60 jars
+OK: OpenSearchSinkConnector found in opensearch-connector-for-apache-kafka-4.1.0.jar
+
+Plugin ready at: /opt/deploy/podman-opensearch-kafka-connect/kafka-connect/plugins/aiven-opensearch-connector
+Next: recreate Connect so the mount is applied:
+  podman-compose --env-file .env -f podman-compose.yml up -d kafka-connect
+Then: ./scripts/06-register-connector.sh
+[root@ansiblecontrol podman-opensearch-kafka-connect]#
+
