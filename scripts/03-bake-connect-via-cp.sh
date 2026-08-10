@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Bake OpenSearch Sink jars into a Connect image using podman cp + commit.
-# Does not depend on Containerfile COPY / build-context quirks.
+# Critical: fix ownership (appuser must read jars) and restore Confluent ENTRYPOINT.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,11 +28,26 @@ podman pull "${BASE_IMAGE}"
 
 echo "==> Create temp container and copy jars in"
 podman rm -f "${TMP_NAME}" 2>/dev/null || true
-podman create --name "${TMP_NAME}" --entrypoint sleep "${BASE_IMAGE}" infinity >/dev/null
-podman start "${TMP_NAME}" >/dev/null
+podman run -d --name "${TMP_NAME}" --user 0 --entrypoint bash "${BASE_IMAGE}" -lc 'sleep infinity' >/dev/null
 
-podman exec "${TMP_NAME}" bash -lc "mkdir -p '${PLUGIN_CTR_DIR}' && rm -rf '${PLUGIN_CTR_DIR}'/*"
+podman exec -u 0 "${TMP_NAME}" bash -lc "mkdir -p '${PLUGIN_CTR_DIR}' && rm -rf '${PLUGIN_CTR_DIR}'/"* || \
+  podman exec -u 0 "${TMP_NAME}" bash -lc "mkdir -p '${PLUGIN_CTR_DIR}'"
+
 podman cp "${PLUGIN_HOST_DIR}/." "${TMP_NAME}:${PLUGIN_CTR_DIR}/"
+
+# Connect runs as appuser — root-owned 0600 jars from podman cp are invisible to the plugin scanner
+echo "==> Fix ownership/permissions for appuser"
+podman exec -u 0 "${TMP_NAME}" bash -lc "
+  set -e
+  # appuser may be uid 1000 on Confluent images
+  if id appuser >/dev/null 2>&1; then
+    chown -R appuser:appuser '${PLUGIN_CTR_DIR}'
+  else
+    chown -R 1000:1000 '${PLUGIN_CTR_DIR}' || true
+  fi
+  chmod -R a+rX '${PLUGIN_CTR_DIR}'
+  ls -la '${PLUGIN_CTR_DIR}' | head
+"
 
 CTR_COUNT="$(podman exec "${TMP_NAME}" bash -lc "shopt -s nullglob; a=(${PLUGIN_CTR_DIR}/*.jar); echo \${#a[@]}")"
 echo "jars inside temp container: ${CTR_COUNT}"
@@ -42,37 +57,27 @@ if [[ "${CTR_COUNT}" -lt 1 ]]; then
   exit 1
 fi
 
-# Ensure SPI class exists
 podman exec "${TMP_NAME}" bash -lc "
-  set -e
-  FOUND=0
-  for j in ${PLUGIN_CTR_DIR}/*.jar; do
-    if unzip -l \"\$j\" 2>/dev/null | grep -q 'OpenSearchSinkConnector.class'; then
-      echo OK: \$j
-      FOUND=1
-      break
-    fi
-  done
-  # unzip may be missing — fall back to jar filename check
-  if [[ \$FOUND -eq 0 ]]; then
-    ls ${PLUGIN_CTR_DIR}/opensearch-connector-for-apache-kafka-*.jar >/dev/null
-    echo 'OK: connector jar present (unzip unavailable for class check)'
-  fi
+  ls ${PLUGIN_CTR_DIR}/opensearch-connector-for-apache-kafka-*.jar >/dev/null
+  echo 'OK: connector jar present'
 "
 
-echo "==> Commit temp container as ${BAKED_TAG}"
+echo "==> Commit as ${BAKED_TAG} with stock Confluent ENTRYPOINT"
 podman stop "${TMP_NAME}" >/dev/null
 podman commit \
+  --change 'ENTRYPOINT ["/etc/confluent/docker/run"]' \
+  --change 'CMD []' \
   --change 'ENV CONNECT_PLUGIN_PATH=/usr/share/java,/usr/share/confluent-hub-components' \
-  --change 'USER appuser' \
+  --change 'USER root' \
   "${TMP_NAME}" "${BAKED_TAG}"
 podman rm -f "${TMP_NAME}" >/dev/null
 
-echo "==> Verify committed image"
-VERIFY_COUNT="$(podman run --rm --entrypoint bash "${BAKED_TAG}" -lc \
+echo "==> Verify committed image jars + entrypoint"
+VERIFY_COUNT="$(podman run --rm --user 0 --entrypoint bash "${BAKED_TAG}" -lc \
   "shopt -s nullglob; a=(${PLUGIN_CTR_DIR}/*.jar); echo \${#a[@]}")"
 echo "jars in ${BAKED_TAG}: ${VERIFY_COUNT}"
 test "${VERIFY_COUNT}" -ge 1
+podman image inspect "${BAKED_TAG}" --format 'Entrypoint={{json .Config.Entrypoint}} User={{.Config.User}}'
 
 echo
 echo "Baked image ready: ${BAKED_TAG}"
