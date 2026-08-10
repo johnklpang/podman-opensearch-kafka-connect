@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Fetch OpenSearch Sink jars and bake them into a local Connect image.
+# For CP 7.6.1 prefer: ./scripts/FIX-IT-NOW.sh (handles Java 11 class + plugin.path).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -31,7 +32,7 @@ podman run --rm --entrypoint bash "${TAG}" -lc '
   test "$(find "${PLUGIN_DIR}" -maxdepth 1 -name "*.jar" | wc -l)" -ge 1
   FOUND=0
   for j in "${PLUGIN_DIR}"/*.jar; do
-    if unzip -l "${j}" 2>/dev/null | grep -q "OpenSearchSinkConnector.class"; then
+    if unzip -l "${j}" 2>/dev/null | grep -Eq "opensearch/(OpenSearch|Opensearch)SinkConnector\.class"; then
       echo "OK: ${j}"
       FOUND=1
       break
@@ -42,5 +43,5 @@ podman run --rm --entrypoint bash "${TAG}" -lc '
 
 echo
 echo "Built ${TAG}"
-echo "Set in .env: CONNECT_IMAGE=${TAG}"
-echo "Then: ./scripts/recover-connect-baked.sh"
+echo "On CP 7.6.1 run: ./scripts/FIX-IT-NOW.sh"
+echo "Or set CONNECT_IMAGE=${TAG} and: ./scripts/start-connect.sh"
