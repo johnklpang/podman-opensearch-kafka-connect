@@ -20,6 +20,12 @@ BAKED_TAG="localhost/kafka-connect-opensearch:7.6.1"
 echo "==> Current Connect container state"
 podman ps -a --filter name=streamstack-kafka-connect --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' || true
 
+# Detect legacy crash-loop caused by docker-entrypoint.sh + missing `find`
+if podman logs streamstack-kafka-connect --tail 30 2>/dev/null | grep -q 'find: command not found'; then
+  echo "==> Detected crash-loop from legacy entrypoint (find missing) — running emergency fix"
+  exec "${ROOT_DIR}/scripts/emergency-fix-connect.sh"
+fi
+
 if [[ "${CONNECT_IMAGE}" != "${BAKED_TAG}" ]]; then
   echo "==> Setting CONNECT_IMAGE=${BAKED_TAG} in .env (plugin must be baked in)"
   sed -i "s|^CONNECT_IMAGE=.*|CONNECT_IMAGE=${BAKED_TAG}|" .env
