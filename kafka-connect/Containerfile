@@ -28,8 +28,8 @@ RUN set -eux; \
     test "${JAR_COUNT}" -ge 1; \
     FOUND=0; \
     for j in "${PLUGIN_DIR}"/*.jar; do \
-      if unzip -l "${j}" | grep -q 'io/aiven/kafka/connect/opensearch/OpenSearchSinkConnector.class'; then \
-        echo "Found OpenSearchSinkConnector in ${j}"; \
+      if unzip -l "${j}" | grep -Eq 'io/aiven/kafka/connect/opensearch/(OpenSearch|Opensearch)SinkConnector\.class'; then \
+        echo "Found OpenSearch SinkConnector SPI in ${j}"; \
         FOUND=1; \
         break; \
       fi; \
