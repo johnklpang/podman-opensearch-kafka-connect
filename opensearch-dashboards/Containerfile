@@ -17,6 +17,7 @@ RUN chmod 755 /usr/local/bin/streamstack-osd-entrypoint.sh \
  && chown root:root /usr/local/bin/streamstack-osd-entrypoint.sh
 
 ENV OPENSEARCH_HOSTS="[\"http://opensearch:9200\"]"
+ENV OPENSEARCH_URL="http://opensearch:9200"
 ENV DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
 ENV SERVER_HOST=0.0.0.0
 

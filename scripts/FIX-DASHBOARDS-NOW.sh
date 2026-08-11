@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Definitive Dashboards fix: bake image that CLI-forces opensearch:9200 (never 127.0.0.1).
+# Definitive Dashboards fix for this host:
+# "opensearch" DNS was resolving to 127.0.0.1 inside the Dashboards container.
+# We pin the real OpenSearch container IP via --add-host and OPENSEARCH_URL.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -10,83 +12,104 @@ source "${ROOT_DIR}/scripts/lib/load-env.sh"
 
 TAG="localhost/opensearch-dashboards-streamstack:2.14.0"
 BASE="docker.io/opensearchproject/opensearch-dashboards:2.14.0"
+NET="streamstack-net"
+OS_NAME="streamstack-opensearch"
 
 echo "============================================================"
-echo " FIX OpenSearch Dashboards (stop using 127.0.0.1:9200)"
+echo " FIX Dashboards (broken DNS: opensearch -> 127.0.0.1)"
 echo "============================================================"
 
-echo "==> 1) OpenSearch must be up"
+echo "==> 1) OpenSearch must be up on host port ${OPENSEARCH_HOST_PORT}"
 if ! curl -fsS "http://127.0.0.1:${OPENSEARCH_HOST_PORT}/_cluster/health" >/dev/null; then
   echo "ERROR: OpenSearch not reachable at :${OPENSEARCH_HOST_PORT}" >&2
-  echo "Run: podman-compose --env-file .env -f podman-compose.yml up -d opensearch" >&2
   exit 1
 fi
-curl -sS "http://127.0.0.1:${OPENSEARCH_HOST_PORT}/_cluster/health?pretty" | head -n 15
+curl -sS "http://127.0.0.1:${OPENSEARCH_HOST_PORT}/_cluster/health?pretty" | head -n 12
 
-echo "==> 2) Build Dashboards image with CLI host override"
+echo "==> 2) Ensure network ${NET} exists"
+podman network exists "${NET}" || podman network create "${NET}"
+
+echo "==> 3) Put OpenSearch on ${NET} with alias 'opensearch'"
+if ! podman inspect "${OS_NAME}" >/dev/null 2>&1; then
+  echo "ERROR: container ${OS_NAME} not found" >&2
+  exit 1
+fi
+# reconnect to refresh aliases
+podman network disconnect "${NET}" "${OS_NAME}" 2>/dev/null || true
+podman network connect --alias opensearch "${NET}" "${OS_NAME}"
+
+OS_IP="$(podman inspect "${OS_NAME}" --format '{{$net := index .NetworkSettings.Networks "'"${NET}"'"}}{{$net.IPAddress}}' 2>/dev/null || true)"
+if [[ -z "${OS_IP}" ]]; then
+  # fallback: first IP
+  OS_IP="$(podman inspect "${OS_NAME}" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' | awk '{print $1}')"
+fi
+if [[ -z "${OS_IP}" ]]; then
+  echo "ERROR: could not determine OpenSearch IP on ${NET}" >&2
+  podman inspect "${OS_NAME}" --format '{{json .NetworkSettings.Networks}}' >&2
+  exit 1
+fi
+echo "OpenSearch IP on ${NET}: ${OS_IP}"
+OPENSEARCH_URL="http://${OS_IP}:9200"
+
+echo "==> 4) Build Dashboards image"
 podman pull "${BASE}"
 podman build --no-cache -t "${TAG}" -f opensearch-dashboards/Containerfile opensearch-dashboards
+sed -i "s|^DASHBOARDS_IMAGE=.*|DASHBOARDS_IMAGE=${TAG}|" .env
 
-echo "==> 3) Point .env at fixed image"
-if grep -q '^DASHBOARDS_IMAGE=' .env; then
-  sed -i "s|^DASHBOARDS_IMAGE=.*|DASHBOARDS_IMAGE=${TAG}|" .env
-else
-  echo "DASHBOARDS_IMAGE=${TAG}" >> .env
-fi
-
-echo "==> 4) Remove ANY old Dashboards containers"
+echo "==> 5) Recreate Dashboards with --add-host opensearch=${OS_IP}"
 podman rm -f streamstack-opensearch-dashboards 2>/dev/null || true
-# also remove anonymous leftovers
-podman ps -a --filter ancestor="${BASE}" --format '{{.ID}} {{.Names}}' | while read -r id name; do
-  [[ "${name}" == *dashboards* ]] && podman rm -f "${id}" || true
-done
 
-echo "==> 5) Ensure network + OpenSearch DNS name"
-podman network exists streamstack-net || podman network create streamstack-net
-if ! podman inspect streamstack-opensearch --format '{{json .NetworkSettings.Networks}}' 2>/dev/null | grep -q streamstack-net; then
-  echo "Connecting existing OpenSearch container to streamstack-net"
-  podman network connect streamstack-net streamstack-opensearch 2>/dev/null || true
-fi
-
-echo "==> 6) Start fixed Dashboards"
 podman run -d \
   --name streamstack-opensearch-dashboards \
   --hostname opensearch-dashboards \
-  --network streamstack-net \
+  --network "${NET}" \
   --restart unless-stopped \
+  --add-host "opensearch:${OS_IP}" \
   -p "${DASHBOARDS_HOST_PORT}:5601" \
   -e DISABLE_SECURITY_DASHBOARDS_PLUGIN=true \
-  -e 'OPENSEARCH_HOSTS=["http://opensearch:9200"]' \
+  -e "OPENSEARCH_URL=${OPENSEARCH_URL}" \
+  -e "OPENSEARCH_HOSTS=[\"${OPENSEARCH_URL}\"]" \
   "${TAG}"
 
-echo "==> 7) Wait and verify (must NOT use 127.0.0.1:9200)"
-sleep 6
-echo "--- process/cmdline ---"
-podman exec streamstack-opensearch-dashboards bash -lc 'ps aux | head -n 5' 2>/dev/null || true
-echo "--- config grep ---"
-podman exec streamstack-opensearch-dashboards \
-  grep -E 'opensearch.hosts|server.host' /usr/share/opensearch-dashboards/config/opensearch_dashboards.yml 2>/dev/null || true
-echo "--- DNS/TCP to opensearch:9200 ---"
-podman exec streamstack-opensearch-dashboards bash -lc \
-  'getent hosts opensearch || true; (echo >/dev/tcp/opensearch/9200) >/dev/null 2>&1 && echo TCP_OK || echo TCP_FAIL' \
-  2>/dev/null || true
+echo "==> 6) Verify DNS + TCP (must NOT be 127.0.0.1)"
+sleep 5
+echo "getent hosts opensearch:"
+podman exec streamstack-opensearch-dashboards getent hosts opensearch || true
+echo "TCP check to ${OS_IP}:9200 and opensearch:9200:"
+podman exec streamstack-opensearch-dashboards bash -lc "
+  (echo >/dev/tcp/${OS_IP}/9200) >/dev/null 2>&1 && echo IP_TCP_OK || echo IP_TCP_FAIL
+  (echo >/dev/tcp/opensearch/9200) >/dev/null 2>&1 && echo NAME_TCP_OK || echo NAME_TCP_FAIL
+" || true
 
-for i in $(seq 1 30); do
-  LOGS="$(podman logs streamstack-opensearch-dashboards --tail 40 2>&1 || true)"
-  if echo "${LOGS}" | grep -q '127.0.0.1:9200'; then
-    echo "attempt ${i}: still seeing 127.0.0.1:9200 in logs..."
-    sleep 3
-    continue
+echo "==> 7) Wait for API / clean logs"
+for i in $(seq 1 40); do
+  # Podman on RHEL wants options BEFORE the container name
+  LOGS="$(podman logs --tail 30 streamstack-opensearch-dashboards 2>&1 || true)"
+  if echo "${LOGS}" | grep -q 'ECONNREFUSED 127.0.0.1:9200'; then
+    # If still 127.0.0.1, DNS override failed — abort early with guidance
+    RESOLVED="$(podman exec streamstack-opensearch-dashboards getent hosts opensearch 2>/dev/null || true)"
+    if echo "${RESOLVED}" | grep -q '127.0.0.1'; then
+      echo "ERROR: opensearch still resolves to 127.0.0.1 inside Dashboards: ${RESOLVED}" >&2
+      echo "OPENSEARCH_URL in use should be ${OPENSEARCH_URL}" >&2
+      podman logs --tail 20 streamstack-opensearch-dashboards >&2 || true
+      exit 1
+    fi
   fi
   if curl -fsS "http://127.0.0.1:${DASHBOARDS_HOST_PORT}/api/status" >/dev/null 2>&1; then
-    echo "SUCCESS: Dashboards API is up and logs are not targeting 127.0.0.1:9200"
+    if echo "${LOGS}" | grep -q 'ECONNREFUSED 127.0.0.1:9200'; then
+      echo "API up but still logging localhost errors — check OPENSEARCH_URL" >&2
+      podman logs --tail 30 streamstack-opensearch-dashboards >&2 || true
+      exit 1
+    fi
+    echo "SUCCESS: Dashboards is up"
     echo "Open: http://127.0.0.1:${DASHBOARDS_HOST_PORT}"
+    echo "OpenSearch URL used: ${OPENSEARCH_URL}"
     exit 0
   fi
-  echo "attempt ${i}: waiting for API..."
+  echo "  attempt ${i}/40: waiting for API..."
   sleep 3
 done
 
 echo "FAILED — recent logs:" >&2
-podman logs streamstack-opensearch-dashboards --tail 50 >&2 || true
+podman logs --tail 50 streamstack-opensearch-dashboards >&2 || true
 exit 1
