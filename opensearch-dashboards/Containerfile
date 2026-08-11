@@ -11,7 +11,10 @@ USER root
 COPY docker-entrypoint.sh /usr/local/bin/streamstack-osd-entrypoint.sh
 COPY opensearch_dashboards.yml /usr/share/opensearch-dashboards/config/opensearch_dashboards.yml
 
-RUN chmod 755 /usr/local/bin/streamstack-osd-entrypoint.sh \
+# Lab stack matches OpenSearch DISABLE_SECURITY_PLUGIN=true: strip securityDashboards
+# at build time so /api/status is anonymous (env alone is ignored by our custom entrypoint).
+RUN /usr/share/opensearch-dashboards/bin/opensearch-dashboards-plugin remove securityDashboards \
+ && chmod 755 /usr/local/bin/streamstack-osd-entrypoint.sh \
  && chmod 644 /usr/share/opensearch-dashboards/config/opensearch_dashboards.yml \
  && chown -R 1000:1000 /usr/share/opensearch-dashboards/config \
  && chown root:root /usr/local/bin/streamstack-osd-entrypoint.sh

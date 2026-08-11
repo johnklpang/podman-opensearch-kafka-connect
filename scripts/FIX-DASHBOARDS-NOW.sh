@@ -81,7 +81,7 @@ podman exec streamstack-opensearch-dashboards bash -lc "
   (echo >/dev/tcp/opensearch/9200) >/dev/null 2>&1 && echo NAME_TCP_OK || echo NAME_TCP_FAIL
 " || true
 
-echo "==> 7) Wait for API / clean logs"
+echo "==> 7) Wait for anonymous /api/status (must be HTTP 200, not 401)"
 for i in $(seq 1 40); do
   # Podman on RHEL wants options BEFORE the container name
   LOGS="$(podman logs --tail 30 streamstack-opensearch-dashboards 2>&1 || true)"
@@ -95,21 +95,31 @@ for i in $(seq 1 40); do
       exit 1
     fi
   fi
-  if curl -fsS "http://127.0.0.1:${DASHBOARDS_HOST_PORT}/api/status" >/dev/null 2>&1; then
+
+  CODE="$(curl -sS -o /tmp/osd-status.body -w '%{http_code}' \
+    "http://127.0.0.1:${DASHBOARDS_HOST_PORT}/api/status" 2>/dev/null || echo 000)"
+
+  if [[ "${CODE}" == "200" ]]; then
     if echo "${LOGS}" | grep -q 'ECONNREFUSED 127.0.0.1:9200'; then
       echo "API up but still logging localhost errors — check OPENSEARCH_URL" >&2
       podman logs --tail 30 streamstack-opensearch-dashboards >&2 || true
       exit 1
     fi
-    echo "SUCCESS: Dashboards is up"
+    echo "SUCCESS: Dashboards is up (anonymous /api/status -> 200)"
     echo "Open: http://127.0.0.1:${DASHBOARDS_HOST_PORT}"
     echo "OpenSearch URL used: ${OPENSEARCH_URL}"
     exit 0
   fi
-  echo "  attempt ${i}/40: waiting for API..."
+
+  if [[ "${CODE}" == "401" ]]; then
+    echo "  attempt ${i}/40: /api/status -> 401 (securityDashboards still enabled; waiting for rebuilt image)..."
+  else
+    echo "  attempt ${i}/40: waiting for API (HTTP ${CODE})..."
+  fi
   sleep 3
 done
 
-echo "FAILED — recent logs:" >&2
+echo "FAILED — /api/status never became anonymous 200." >&2
+echo "If you still see 401, the custom image did not remove securityDashboards." >&2
 podman logs --tail 50 streamstack-opensearch-dashboards >&2 || true
 exit 1

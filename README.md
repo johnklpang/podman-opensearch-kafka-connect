@@ -319,6 +319,10 @@ so env/yml/CLI hostname settings still hit localhost. Use:
 ./scripts/FIX-DASHBOARDS-NOW.sh
 ```
 
+That rebuild also strips the `securityDashboards` plugin (our custom entrypoint
+replaces the official one that honors `DISABLE_SECURITY_DASHBOARDS_PLUGIN`). Without
+that, `/api/status` returns **401** forever even though Dashboards is healthy.
+
 That script finds the OpenSearch IP on `streamstack-net`, adds `--add-host opensearch:<IP>`,
 and starts the custom Dashboards image with `OPENSEARCH_URL=http://<IP>:9200`.
 (`./scripts/fix-dashboards-hosts.sh` is a wrapper to the same fix.)
