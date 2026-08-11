@@ -1,0 +1,25 @@
+# OpenSearch Dashboards with forced opensearch.hosts (no localhost fallback)
+# Build:
+#   podman build -t localhost/opensearch-dashboards-streamstack:2.14.0 \
+#     -f opensearch-dashboards/Containerfile opensearch-dashboards
+
+ARG OSD_VERSION=2.14.0
+FROM docker.io/opensearchproject/opensearch-dashboards:${OSD_VERSION}
+
+USER root
+
+COPY docker-entrypoint.sh /usr/local/bin/streamstack-osd-entrypoint.sh
+COPY opensearch_dashboards.yml /usr/share/opensearch-dashboards/config/opensearch_dashboards.yml
+
+RUN chmod 755 /usr/local/bin/streamstack-osd-entrypoint.sh \
+ && chmod 644 /usr/share/opensearch-dashboards/config/opensearch_dashboards.yml \
+ && chown -R 1000:1000 /usr/share/opensearch-dashboards/config \
+ && chown root:root /usr/local/bin/streamstack-osd-entrypoint.sh
+
+ENV OPENSEARCH_HOSTS="[\"http://opensearch:9200\"]"
+ENV DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+ENV SERVER_HOST=0.0.0.0
+
+USER 1000
+
+ENTRYPOINT ["/usr/local/bin/streamstack-osd-entrypoint.sh"]

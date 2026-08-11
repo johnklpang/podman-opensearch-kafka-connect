@@ -224,6 +224,8 @@ services:
       start_period: 45s
 
   opensearch-dashboards:
+    # Build first: ./scripts/FIX-DASHBOARDS-NOW.sh
+    # Image CLI-forces --opensearch.hosts=http://opensearch:9200 (never 127.0.0.1)
     image: ${DASHBOARDS_IMAGE}
     container_name: streamstack-opensearch-dashboards
     hostname: opensearch-dashboards
@@ -235,13 +237,10 @@ services:
     ports:
       - "${DASHBOARDS_HOST_PORT}:${DASHBOARDS_PORT}"
     environment:
-      # Hardcoded JSON array — do NOT pass via .env substitution (podman-compose
-      # often drops/mangles quoted JSON and Dashboards then defaults to 127.0.0.1:9200).
       OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
       DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
       SERVER_HOST: "0.0.0.0"
     healthcheck:
-      # Dashboards image may lack curl; use bash /dev/tcp probe on the HTTP port.
       test:
         [
           "CMD-SHELL",
