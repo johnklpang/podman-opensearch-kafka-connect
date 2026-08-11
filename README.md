@@ -312,14 +312,14 @@ That builds `localhost/kafka-connect-opensearch:7.6.1` (plugin baked in) and sta
 
 ### OpenSearch Dashboards: `ECONNREFUSED 127.0.0.1:9200`
 
-Dashboards must reach OpenSearch at **`http://opensearch:9200`** on the Podman network, not localhost.
+Stock Dashboards keeps defaulting to localhost. Use the fixed image that
+**CLI-forces** `--opensearch.hosts=http://opensearch:9200`:
 
 ```bash
-./scripts/fix-dashboards-hosts.sh
-# verify:
-podman exec streamstack-opensearch-dashboards printenv OPENSEARCH_HOSTS
-# expect: ["http://opensearch:9200"]
+./scripts/FIX-DASHBOARDS-NOW.sh
 ```
+
+Do not keep restarting the stock image with only env vars — that is what produces `127.0.0.1:9200`.
 
 **Cause:** Aiven connector **4.x** is built for **Java 17**; Confluent CP **7.6.1** runs **Java 11**, so jars sit on disk but the class never loads (only MirrorMaker appears).
 
