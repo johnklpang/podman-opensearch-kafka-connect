@@ -237,6 +237,8 @@ services:
     ports:
       - "${DASHBOARDS_HOST_PORT}:${DASHBOARDS_PORT}"
     environment:
+      # Prefer OPENSEARCH_URL from FIX-DASHBOARDS-NOW.sh (may be http://<ip>:9200)
+      # when Podman DNS maps hostname "opensearch" to 127.0.0.1.
       OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
       DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
       SERVER_HOST: "0.0.0.0"
